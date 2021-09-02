@@ -15,6 +15,16 @@
 
 const int V_AM = 6;
 
+//yes, this is a useless, avoidable bodge
+std::array<std::array<std::array<bool, V_AM>, 50>, 50> *p_global_map = 0;
+std::array<std::array<sf::RectangleShape, 50>, 50> *p_global_tileMap = 0;
+
+int frame = 0;
+
+void waitFrame() { 
+	std::cout << "frame " << frame++ << std::endl;
+	std::this_thread::sleep_for(std::chrono::milliseconds(35));
+};
 //NOTE: after reworking seemingly unrelated fill function, 
 //		the first fill function started behaving in a different (not worse, different) fashion
 
@@ -42,8 +52,9 @@ void c_room(int x, int y, int x_d, int y_d, std::array<std::array<std::array<boo
 		(*map)[x_d][i][3] = 1;
 	}
 }
-void apply(std::array<std::array<std::array<bool, V_AM>, 50>, 50> *map, 
-		  std::array<std::array<sf::RectangleShape, 50>, 50> &tileMap) {
+
+void apply(std::array<std::array<std::array<bool, V_AM>, 50>, 50> *map) { 
+//		   std::array<std::array<sf::RectangleShape, 50>, 50> &tileMap) {
 		
 	for (int y = 0; y < 50; y++) {
 		for (int x = 0; x < 50; x++) {
@@ -79,7 +90,7 @@ void apply(std::array<std::array<std::array<bool, V_AM>, 50>, 50> *map,
 				color = sf::Color(0x98, 0xd7, 0xc2);
 			}
 			
-			tileMap[x][y].setFillColor(color);
+			(*p_global_tileMap)[x][y].setFillColor(color);
 			//std::cout << " ";
 		}
 		//std::cout << "\n";
@@ -88,10 +99,22 @@ void apply(std::array<std::array<std::array<bool, V_AM>, 50>, 50> *map,
 	//std::this_thread::sleep_for(std::chrono::milliseconds(30));
 }
 
+void draw(sf::RenderWindow &window) {
+	//DRAWING - don't delete
+	window.clear(sf::Color::Black);
+	for (int y = 0; y < 50; y++) {
+		for (int x = 0; x < 50; x++) {
+			window.draw((*p_global_tileMap)[x][y]);
+		}
+	}
+	window.display();
+}
+
 class Door {
 	//state is on map
 	int id;
 	int x, y;
+	sf::RenderWindow *win;
 	void toggleFill(std::array<std::array<std::array<bool, V_AM>, 50>, 50> &map) { 
 		
 		//NOTE: this function is partially redundant, SEE: main()::fill();
@@ -129,10 +152,12 @@ class Door {
 		bool isDone = false;
 		int x_min = 1, x_max = 1, y_min = 1, y_max = 1;
 		while (!isDone) {
+			isDone = true;
 			for (int s_y = y - y_min; s_y <= y_max; s_y++) {
 				for (int s_x = x - x_min; s_x <= x_max; s_x++) {
 						
 					if (map[s_x][s_y][0] == 0 &&  		//update
+						map[s_x][s_y][1] == 1 &&  		//insides
 						map[s_x][s_y][2] == !isWater && //water (!isWater, if there is water, update where there isn't)
 						map[s_x][s_y][3] == 0 &&  		//walls
 					   (map[s_x][s_y][4] == 0 || 		//doors
@@ -155,34 +180,40 @@ class Door {
 			x_max++;
 			y_min++;
 			y_max++;
-
+			std::cout << "Door::toggleFill(): enlarged scanning area." << std::endl;
+			
 			//border controll
-			if (x - x_min < 1)
+			if (x - x_min < 1) {
 				x_min--;
-			if (x + x_max >= 48)
+				std::cout << "Door::toggleFill(): fixed scanning area." << std::endl;
+			} if (x + x_max >= 48) {
 				x_max--;
-			if (y - y_min < 1)
+				std::cout << "Door::toggleFill(): fixed scanning area." << std::endl;
+			} if (y - y_min < 1) {
 				y_min--;
-			if (y + y_max >= 48)
+				std::cout << "Door::toggleFill(): fixed scanning area." << std::endl;
+			} if (y + y_max >= 48) {
 				y_max--;
+				std::cout << "Door::toggleFill(): fixed scanning area." << std::endl;
+			}
+			//NOTE: REACHED MAX SIZE
 		}
 	}
 public:
-	Door(int idd, int xx, int yy) {
+	Door(int idd, int xx, int yy, sf::RenderWindow *win) {
 		id = idd;
 		x = xx;
 		y = yy;
 	}
 	void toggle(std::array<std::array<std::array<bool, V_AM>, 50>, 50> &map) {
 		map[x][y][5] = !map[x][y][5];
-		map[x][y][0] = 1;
-		
+
+		toggleFill(map);
 	}
 };
 
 int main() {
 
-	int frame = 0;
 	//													  Title + Close
 	sf::RenderWindow window(sf::VideoMode(1000, 1000), "My window", 1 | 4);
 	window.setVerticalSyncEnabled(false);
@@ -192,6 +223,8 @@ int main() {
 	// map {} didn't work
 	std::array<std::array<std::array<bool, V_AM>, 50>, 50> map;
 	std::array<std::array<sf::RectangleShape, 50>, 50> tileMap;
+	p_global_map = &map;
+	p_global_tileMap = &tileMap;
 	for (int y = 0; y < 50; y++) {
 		for (int x = 0; x < 50; x++) {
 			tileMap[x][y] = sf::RectangleShape(sf::Vector2f(20, 20));
@@ -216,10 +249,6 @@ int main() {
 	//separating ins and outs
 	map[0][0][0] = true; //update
 
-	auto waitFrame = [&]() { 
-		std::cout << "frame " << frame++ << std::endl;
-		std::this_thread::sleep_for(std::chrono::milliseconds(35));
-	};
 
 	auto fill_spot = [&map](int x, int y, int x_off, int y_off, 
 					  std::array<std::array<std::array<bool, V_AM>, 50>, 50> *altMap = 0, bool opnCls = 0) {
@@ -278,7 +307,7 @@ int main() {
 			}
 		}
 	
-		apply(&mapCpy, tileMap);
+		apply(&mapCpy);
 
 		sf::Event event;
         while (window.pollEvent(event))
@@ -308,7 +337,7 @@ int main() {
 		}
 	}
 	
-	apply(&map, tileMap);		
+	apply(&map);		
 	
 	for (int y = 0; y < 50; y++) {
 		for (int x = 0; x < 50; x++) {
@@ -319,20 +348,21 @@ int main() {
 	waitFrame();
 	window.display();
 
+	//VIBECHECK above code in main() works correctly
+
 	int d_idx = 0;
 	std::queue<Door> doorList;
 	//indexing doors
 	for (int y = 0; y < 50; y++) {
 		for (int x = 0; x < 50; x++) {
 			if (map[x][y][4] == 1) {
-				Door newDoor(d_idx++, x, y);
+				Door newDoor(d_idx++, x, y, &window);
 
 				doorList.push(newDoor);
 			}
 		}
 	}
 
-	isDone = true;
 	while(window.isOpen()) {        
 		sf::Event event;
         while (window.pollEvent(event))
@@ -341,39 +371,21 @@ int main() {
                 window.close();
         }
 
-		if(isDone) {
-			doorList.front().toggle(map);
-			
-			doorList.push(doorList.front());
-			doorList.pop();
-		}
+		//cycle through doors
+		doorList.front().toggle(map);
+		
+		doorList.push(doorList.front());
+		doorList.pop();
 	
-		auto mapCpy = map; // for visuals only
-		for (int y = 0; y < 50; y++) {
-			for (int x = 0; x < 50; x++) {
-				//i can't set current based on others, i can't tell wether i should disable an update or not
-				if (map[x][y][0] == 1) {
-					isDone = false;
-					fill_spot(x, y, 0, 1 , &mapCpy);
-					fill_spot(x, y, 1, 0 , &mapCpy);
-					fill_spot(x, y, 0, -1, &mapCpy);
-					fill_spot(x, y, -1, 0, &mapCpy);
-					mapCpy[x][y][0] = 0;
-					
-					//draw(&map);
-					//std::cout << "wave at: " << x << " " << y << std::endl;
-				}
-			}
-		}
+		doorList.front().toggle(map);
 
+		//DRAWING - don't delete
 		window.clear(sf::Color::Black);
-
 		for (int y = 0; y < 50; y++) {
 			for (int x = 0; x < 50; x++) {
 				window.draw(tileMap[x][y]);
 			}
 		}
-
 		window.display();
 		waitFrame();
 
